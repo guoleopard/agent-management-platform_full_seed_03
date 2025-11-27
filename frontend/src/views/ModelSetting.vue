@@ -4,7 +4,7 @@ import axios from 'axios'
 import { ElMessage, ElTable, ElTableColumn, ElButton, ElDialog, ElForm, ElFormItem, ElInput, ElSelect, ElOption } from 'element-plus'
 
 // 配置axios基础URL
-axios.defaults.baseURL = 'http://localhost:5000/api'
+axios.defaults.baseURL = 'http://localhost:5003/api'
 
 // 数据模型
 const models = ref([])
@@ -167,8 +167,7 @@ onMounted(() => {
 <style scoped>
 .model-setting-container {
   padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
+  height: 100%;
 }
 
 .header {
