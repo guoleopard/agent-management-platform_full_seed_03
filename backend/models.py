@@ -132,3 +132,57 @@ class Message(db.Model):
             'content': self.content,
             'timestamp': self.timestamp.isoformat()
         }
+
+class Role(db.Model):
+    """角色数据模型"""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(20), default='active')  # active, inactive
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # 建立与User的关系
+    users = db.relationship('User', backref='role', lazy=True)
+    
+    def __repr__(self):
+        return f'<Role {self.name}>'
+    
+    def to_dict(self):
+        """转换为字典格式，用于API响应"""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'status': self.status,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat(),
+            'users': [user.to_dict() for user in self.users]
+        }
+
+class User(db.Model):
+    """用户数据模型"""
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(100), unique=True, nullable=False)
+    email = db.Column(db.String(100), unique=True, nullable=False)
+    password = db.Column(db.String(255), nullable=False)
+    role_id = db.Column(db.Integer, db.ForeignKey('role.id'), nullable=True)
+    status = db.Column(db.String(20), default='active')  # active, inactive
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __repr__(self):
+        return f'<User {self.username}>'
+    
+    def to_dict(self):
+        """转换为字典格式，用于API响应"""
+        return {
+            'id': self.id,
+            'username': self.username,
+            'email': self.email,
+            'role_id': self.role_id,
+            'role_name': self.role.name if self.role else None,
+            'status': self.status,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat()
+        }

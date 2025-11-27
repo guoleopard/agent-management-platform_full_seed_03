@@ -9,6 +9,8 @@ import { RouterLink, RouterView } from 'vue-router'
       <nav class="app-nav">
         <RouterLink to="/" class="nav-link">模型设置</RouterLink>
         <RouterLink to="/agent-create" class="nav-link">创建智能体</RouterLink>
+        <RouterLink to="/user-management" class="nav-link">用户管理</RouterLink>
+        <RouterLink to="/role-management" class="nav-link">角色管理</RouterLink>
       </nav>
     </header>
     <main class="app-main">

@@ -48,6 +48,8 @@ model_ns = api.namespace('models', description='模型管理API')
 agent_ns = api.namespace('agents', description='智能体管理API')
 chat_ns = api.namespace('chat', description='智能体会话API')
 log_ns = api.namespace('logs', description='日志管理API')
+user_ns = api.namespace('users', description='用户管理API')
+role_ns = api.namespace('roles', description='角色管理API')
 
 # 定义数据模型
 model_model = api.model('Model', {
@@ -105,6 +107,31 @@ log_model = api.model('AgentLog', {
     'level': fields.String(description='日志级别', enum=['info', 'warning', 'error', 'debug']),
     'message': fields.String(description='日志消息'),
     'timestamp': fields.String(readonly=True, description='时间戳')
+})
+
+# 定义用户和角色数据模型
+role_model = api.model('Role', {
+    'id': fields.Integer(readonly=True, description='角色ID'),
+    'name': fields.String(required=True, description='角色名称'),
+    'description': fields.String(description='角色描述'),
+    'status': fields.String(description='角色状态', enum=['active', 'inactive']),
+    'created_at': fields.String(readonly=True, description='创建时间'),
+    'updated_at': fields.String(readonly=True, description='更新时间')
+})
+
+user_model = api.model('User', {
+    'id': fields.Integer(readonly=True, description='用户ID'),
+    'username': fields.String(required=True, description='用户名'),
+    'email': fields.String(required=True, description='邮箱'),
+    'password': fields.String(required=True, description='密码'),
+    'role_id': fields.Integer(description='角色ID'),
+    'status': fields.String(description='用户状态', enum=['active', 'inactive']),
+    'created_at': fields.String(readonly=True, description='创建时间'),
+    'updated_at': fields.String(readonly=True, description='更新时间')
+})
+
+assign_users_model = api.model('AssignUsers', {
+    'user_ids': fields.List(fields.Integer, required=True, description='用户ID列表')
 })
 
 # 首页路由
@@ -690,6 +717,293 @@ class LogListResource(Resource):
             }
             
             return response, 200
+            
+        except Exception as e:
+            return {'error': str(e)}, 500
+
+# --------------------------
+# 用户管理API
+# --------------------------
+
+@user_ns.route('/')
+class UserListResource(Resource):
+    @user_ns.doc('list_users')
+    @user_ns.marshal_list_with(user_model)
+    def get(self):
+        """获取用户列表（支持分页）"""
+        try:
+            # 获取分页参数
+            page = request.args.get('page', 1, type=int)
+            per_page = request.args.get('per_page', 10, type=int)
+            
+            # 查询用户
+            users = User.query.paginate(page=page, per_page=per_page, error_out=False)
+            
+            # 构造响应数据
+            response = {
+                'users': [user.to_dict() for user in users.items],
+                'page': users.page,
+                'per_page': users.per_page,
+                'total': users.total,
+                'pages': users.pages
+            }
+            
+            return response, 200
+            
+        except Exception as e:
+            return {'error': str(e)}, 500
+    
+    @user_ns.doc('create_user')
+    @user_ns.expect(user_model)
+    @user_ns.marshal_with(user_model, code=201)
+    def post(self):
+        """创建新用户"""
+        try:
+            data = request.get_json()
+            
+            # 验证必填字段
+            if not data or 'username' not in data or 'email' not in data or 'password' not in data:
+                return {'error': 'Username, email and password are required'}, 400
+            
+            # 检查用户是否已存在
+            existing_user = User.query.filter((User.username == data['username']) | (User.email == data['email'])).first()
+            if existing_user:
+                return {'error': 'User already exists'}, 409
+            
+            # 创建新用户
+            user = User(
+                username=data['username'],
+                email=data['email'],
+                password=data['password'],  # 注意：实际应用中应该加密密码
+                role_id=data.get('role_id'),
+                status=data.get('status', 'active')
+            )
+            
+            db.session.add(user)
+            db.session.commit()
+            
+            return {'message': 'User created successfully', 'user': user.to_dict()}, 201
+            
+        except Exception as e:
+            return {'error': str(e)}, 500
+
+@user_ns.route('/<int:user_id>')
+@user_ns.param('user_id', '用户ID')
+class UserResource(Resource):
+    @user_ns.doc('get_user')
+    @user_ns.marshal_with(user_model)
+    def get(self, user_id):
+        """获取单个用户信息"""
+        try:
+            user = User.query.get_or_404(user_id)
+            return {'user': user.to_dict()}, 200
+            
+        except Exception as e:
+            return {'error': str(e)}, 500
+    
+    @user_ns.doc('update_user')
+    @user_ns.expect(user_model)
+    @user_ns.marshal_with(user_model)
+    def put(self, user_id):
+        """更新用户信息"""
+        try:
+            user = User.query.get_or_404(user_id)
+            data = request.get_json()
+            
+            # 更新用户信息
+            if 'username' in data:
+                user.username = data['username']
+            if 'email' in data:
+                user.email = data['email']
+            if 'password' in data and data['password']:
+                user.password = data['password']  # 注意：实际应用中应该加密密码
+            if 'role_id' in data:
+                user.role_id = data['role_id']
+            if 'status' in data:
+                # 验证状态值
+                valid_statuses = ['active', 'inactive']
+                if data['status'] not in valid_statuses:
+                    return {'error': f'Invalid status. Must be one of {valid_statuses}'}, 400
+                user.status = data['status']
+            
+            db.session.commit()
+            
+            return {'message': 'User updated successfully', 'user': user.to_dict()}, 200
+            
+        except Exception as e:
+            return {'error': str(e)}, 500
+    
+    @user_ns.doc('delete_user')
+    def delete(self, user_id):
+        """删除用户"""
+        try:
+            user = User.query.get_or_404(user_id)
+            username = user.username
+            
+            # 删除用户
+            db.session.delete(user)
+            db.session.commit()
+            
+            return {'message': 'User deleted successfully'}, 200
+            
+        except Exception as e:
+            return {'error': str(e)}, 500
+
+# --------------------------
+# 角色管理API
+# --------------------------
+
+@role_ns.route('/')
+class RoleListResource(Resource):
+    @role_ns.doc('list_roles')
+    @role_ns.marshal_list_with(role_model)
+    def get(self):
+        """获取角色列表（支持分页）"""
+        try:
+            # 获取分页参数
+            page = request.args.get('page', 1, type=int)
+            per_page = request.args.get('per_page', 10, type=int)
+            
+            # 查询角色
+            roles = Role.query.paginate(page=page, per_page=per_page, error_out=False)
+            
+            # 构造响应数据
+            response = {
+                'roles': [role.to_dict() for role in roles.items],
+                'page': roles.page,
+                'per_page': roles.per_page,
+                'total': roles.total,
+                'pages': roles.pages
+            }
+            
+            return response, 200
+            
+        except Exception as e:
+            return {'error': str(e)}, 500
+    
+    @role_ns.doc('create_role')
+    @role_ns.expect(role_model)
+    @role_ns.marshal_with(role_model, code=201)
+    def post(self):
+        """创建新角色"""
+        try:
+            data = request.get_json()
+            
+            # 验证必填字段
+            if not data or 'name' not in data:
+                return {'error': 'Name is required'}, 400
+            
+            # 检查角色是否已存在
+            existing_role = Role.query.filter_by(name=data['name']).first()
+            if existing_role:
+                return {'error': 'Role already exists'}, 409
+            
+            # 创建新角色
+            role = Role(
+                name=data['name'],
+                description=data.get('description', ''),
+                status=data.get('status', 'active')
+            )
+            
+            db.session.add(role)
+            db.session.commit()
+            
+            return {'message': 'Role created successfully', 'role': role.to_dict()}, 201
+            
+        except Exception as e:
+            return {'error': str(e)}, 500
+
+@role_ns.route('/<int:role_id>')
+@role_ns.param('role_id', '角色ID')
+class RoleResource(Resource):
+    @role_ns.doc('get_role')
+    @role_ns.marshal_with(role_model)
+    def get(self, role_id):
+        """获取单个角色信息"""
+        try:
+            role = Role.query.get_or_404(role_id)
+            return {'role': role.to_dict()}, 200
+            
+        except Exception as e:
+            return {'error': str(e)}, 500
+    
+    @role_ns.doc('update_role')
+    @role_ns.expect(role_model)
+    @role_ns.marshal_with(role_model)
+    def put(self, role_id):
+        """更新角色信息"""
+        try:
+            role = Role.query.get_or_404(role_id)
+            data = request.get_json()
+            
+            # 更新角色信息
+            if 'name' in data:
+                role.name = data['name']
+            if 'description' in data:
+                role.description = data['description']
+            if 'status' in data:
+                # 验证状态值
+                valid_statuses = ['active', 'inactive']
+                if data['status'] not in valid_statuses:
+                    return {'error': f'Invalid status. Must be one of {valid_statuses}'}, 400
+                role.status = data['status']
+            
+            db.session.commit()
+            
+            return {'message': 'Role updated successfully', 'role': role.to_dict()}, 200
+            
+        except Exception as e:
+            return {'error': str(e)}, 500
+    
+    @role_ns.doc('delete_role')
+    def delete(self, role_id):
+        """删除角色"""
+        try:
+            role = Role.query.get_or_404(role_id)
+            role_name = role.name
+            
+            # 检查是否有用户使用该角色
+            if len(role.users) > 0:
+                return {'error': f'Role "{role_name}" is being used by {len(role.users)} users. Cannot delete.'}, 400
+            
+            # 删除角色
+            db.session.delete(role)
+            db.session.commit()
+            
+            return {'message': 'Role deleted successfully'}, 200
+            
+        except Exception as e:
+            return {'error': str(e)}, 500
+
+@role_ns.route('/<int:role_id>/assign-users')
+@role_ns.param('role_id', '角色ID')
+class RoleAssignUsersResource(Resource):
+    @role_ns.doc('assign_users_to_role')
+    @role_ns.expect(assign_users_model)
+    def post(self, role_id):
+        """分配用户给角色"""
+        try:
+            role = Role.query.get_or_404(role_id)
+            data = request.get_json()
+            
+            # 验证必填字段
+            if not data or 'user_ids' not in data:
+                return {'error': 'user_ids is required'}, 400
+            
+            # 获取所有用户
+            users = User.query.filter(User.id.in_(data['user_ids'])).all()
+            
+            # 检查用户是否存在
+            if len(users) != len(data['user_ids']):
+                return {'error': 'Some users not found'}, 404
+            
+            # 分配角色给用户
+            for user in users:
+                user.role_id = role_id
+            
+            db.session.commit()
+            
+            return {'message': 'Users assigned to role successfully'}, 200
             
         except Exception as e:
             return {'error': str(e)}, 500
